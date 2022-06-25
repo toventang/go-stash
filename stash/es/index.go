@@ -1,13 +1,12 @@
 package es
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/olivere/elastic/v7"
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/vjeantet/jodaTime"
 	"github.com/zeromicro/go-zero/core/fx"
 	"github.com/zeromicro/go-zero/core/lang"
@@ -35,7 +34,7 @@ type (
 	IndexFunc   func() string
 
 	Index struct {
-		client       *elastic.Client
+		client       *elasticsearch.Client
 		indexFormat  IndexFormat
 		indices      map[string]lang.PlaceholderType
 		lock         sync.RWMutex
@@ -43,7 +42,7 @@ type (
 	}
 )
 
-func NewIndex(client *elastic.Client, indexFormat string, loc *time.Location) *Index {
+func NewIndex(client *elasticsearch.Client, indexFormat string, loc *time.Location) *Index {
 	return &Index{
 		client:       client,
 		indexFormat:  buildIndexFormatter(indexFormat, loc),
@@ -82,20 +81,16 @@ func (idx *Index) ensureIndex(index string) error {
 			}
 		}()
 
-		existsService := elastic.NewIndicesExistsService(idx.client)
-		existsService.Index([]string{index})
-		exist, err := existsService.Do(context.Background())
+		resp, err := idx.client.Indices.Exists([]string{index})
 		if err != nil {
 			return nil, err
 		}
-		if exist {
+		if !resp.IsError() {
 			return nil, nil
 		}
 
-		createService := idx.client.CreateIndex(index)
 		if err := fx.DoWithRetry(func() error {
-			// is it necessary to check the result?
-			_, err := createService.Do(context.Background())
+			_, err := idx.client.Indices.Create(index)
 			return err
 		}); err != nil {
 			return nil, err

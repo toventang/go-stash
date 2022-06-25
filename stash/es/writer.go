@@ -1,10 +1,11 @@
 package es
 
 import (
-	"context"
+	"bytes"
+	"fmt"
 
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/kevwan/go-stash/stash/config"
-	"github.com/olivere/elastic/v7"
 	"github.com/zeromicro/go-zero/core/executors"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -12,7 +13,7 @@ import (
 type (
 	Writer struct {
 		docType  string
-		client   *elastic.Client
+		client   *elasticsearch.Client
 		inserter *executors.ChunkExecutor
 	}
 
@@ -23,12 +24,12 @@ type (
 )
 
 func NewWriter(c config.ElasticSearchConf) (*Writer, error) {
-	client, err := elastic.NewClient(
-		elastic.SetSniff(false),
-		elastic.SetURL(c.Hosts...),
-		elastic.SetGzip(c.Compress),
-		elastic.SetBasicAuth(c.Username,c.Password),
-	)
+	client, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses:           c.Hosts,
+		Username:            c.Username,
+		Password:            c.Password,
+		CompressRequestBody: c.Compress,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -49,30 +50,26 @@ func (w *Writer) Write(index, val string) error {
 }
 
 func (w *Writer) execute(vals []interface{}) {
-	var bulk = w.client.Bulk()
+	var buffer bytes.Buffer
 	for _, val := range vals {
 		pair := val.(valueWithIndex)
-		req := elastic.NewBulkIndexRequest().Index(pair.index).Type(w.docType).Doc(pair.val)
-		bulk.Add(req)
+		data := []byte(pair.val)
+		data = append(data, "\n"...)
+		meta := []byte(fmt.Sprintf(`{"index":{"_index":"%s"}}%s`, pair.index, "\n"))
+		buffer.Grow(len(data))
+		buffer.Write(meta)
+		buffer.Write(data)
 	}
-	resp, err := bulk.Do(context.Background())
+	resp, err := w.client.Bulk(bytes.NewReader(buffer.Bytes()))
 	if err != nil {
 		logx.Error(err)
 		return
 	}
+	defer resp.Body.Close()
 
-	// bulk error in docs will report in response items
-	if !resp.Errors {
+	if !resp.IsError() {
 		return
 	}
 
-	for _, imap := range resp.Items {
-		for _, item := range imap {
-			if item.Error == nil {
-				continue
-			}
-
-			logx.Error(item.Error)
-		}
-	}
+	logx.Error(resp.Body)
 }

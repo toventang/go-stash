@@ -4,11 +4,11 @@ import (
 	"flag"
 	"time"
 
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/kevwan/go-stash/stash/config"
 	"github.com/kevwan/go-stash/stash/es"
 	"github.com/kevwan/go-stash/stash/filter"
 	"github.com/kevwan/go-stash/stash/handler"
-	"github.com/olivere/elastic/v7"
 	"github.com/zeromicro/go-queue/kq"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -50,11 +50,11 @@ func main() {
 	defer group.Stop()
 
 	for _, processor := range c.Clusters {
-		client, err := elastic.NewClient(
-			elastic.SetSniff(false),
-			elastic.SetURL(processor.Output.ElasticSearch.Hosts...),
-			elastic.SetBasicAuth(processor.Output.ElasticSearch.Username,processor.Output.ElasticSearch.Password),
-		)
+		client, err := elasticsearch.NewClient(elasticsearch.Config{
+			Addresses: processor.Output.ElasticSearch.Hosts,
+			Username:  processor.Output.ElasticSearch.Username,
+			Password:  processor.Output.ElasticSearch.Password,
+		})
 		logx.Must(err)
 
 		filters := filter.CreateFilters(processor)
