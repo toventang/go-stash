@@ -53,12 +53,10 @@ func (w *Writer) execute(vals []interface{}) {
 	var buffer bytes.Buffer
 	for _, val := range vals {
 		pair := val.(valueWithIndex)
-		data := []byte(pair.val)
-		data = append(data, "\n"...)
-		meta := []byte(fmt.Sprintf(`{"index":{"_index":"%s"}}%s`, pair.index, "\n"))
-		buffer.Grow(len(data))
-		buffer.Write(meta)
-		buffer.Write(data)
+		meta := fmt.Sprintf(`{"index":{"_index":"%s"}}%s`, pair.index, "\n")
+		buffer.Grow(len(meta) + len(pair.val))
+		buffer.WriteString(meta)
+		buffer.WriteString(pair.val)
 	}
 	resp, err := w.client.Bulk(bytes.NewReader(buffer.Bytes()))
 	if err != nil {
